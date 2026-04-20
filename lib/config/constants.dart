@@ -35,16 +35,16 @@ class AppConstants {
   // 앱 정보
   static const String appName = 'PinStock';
   static const String appVersion = '1.0.0';
-  static const String supportEmail = 'imchic8@gmail.com';
+  static const String supportEmail = 'pinnstock.dev@gmail.com';
   static const String supportPhone = '';
   static const String supportTeamName = 'PinStock 운영팀';
   static const String supportResponseHours = '평일 10:00 - 18:00 (KST)';
   static const String supportWebsiteUrl =
-      'https://imchic.github.io/PinStock-privacy/docs/index.html';
+      'https://imchic.github.io/pinstock-privacy/docs/index.html';
   static const String supportContactPageUrl =
-      'https://imchic.github.io/PinStock-privacy/docs/contact.html';
+      'https://imchic.github.io/pinstock-privacy/docs/contact.html';
   static const String privacyPolicyUrl =
-      'https://imchic.github.io/PinStock-privacy/docs/privacy_policy.html';
+      'https://imchic.github.io/pinstock-privacy/docs/privacy_policy.html';
 
   // 시간 설정
   static const int apiRefreshIntervalMinutes = 10;

@@ -127,7 +127,7 @@ lib/
 | 공식 안내 페이지 | https://imchic.github.io/PinStock-privacy/docs/index.html |
 | 문의 페이지 | https://imchic.github.io/PinStock-privacy/docs/contact.html |
 | 개인정보처리방침 | https://imchic.github.io/PinStock-privacy/docs/privacy_policy.html |
-| 문의 이메일 | imchic8@gmail.com |
+| 문의 이메일 | pinnstock.dev@gmail.com |
 
 ## GitHub Pages 배포
 
