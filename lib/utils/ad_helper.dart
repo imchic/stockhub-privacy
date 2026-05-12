@@ -6,9 +6,9 @@ import 'package:flutter/foundation.dart';
 class AdHelper {
   // ── Android 실제 ID ──
   static const String _androidBannerId =
-      'ca-app-pub-1570138379392319~3324722823';
+      'ca-app-pub-1570138379392319/5680174451';
   static const String _androidInterstitialId =
-      'ca-app-pub-1570138379392319/9670254880';
+      'ca-app-pub-1570138379392319/5354695228';
   static const String _androidAppOpenId =
       'ca-app-pub-1570138379392319/5024432867';
 
