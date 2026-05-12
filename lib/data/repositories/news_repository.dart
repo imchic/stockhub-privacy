@@ -44,6 +44,10 @@ class NewsRepository {
 
       return newsWithBookmarks;
     } catch (e) {
+      if (e is ApiAuthException || e is ApiConfigurationException) {
+        debugPrint('⛔ Repository 인증/설정 에러 (query: $query): $e');
+        rethrow;
+      }
       debugPrint('❌ Repository 에러 (query: $query): $e');
       final cached = localService.getCachedNews();
       debugPrint('📦 캐시에서 ${cached.length}개 기사 반환');
@@ -83,6 +87,9 @@ class NewsRepository {
       if (page == 1) await localService.saveNews(newsWithBookmarks);
       return newsWithBookmarks;
     } catch (e) {
+      if (e is ApiAuthException || e is ApiConfigurationException) {
+        rethrow;
+      }
       return localService
           .getCachedNews()
           .where((news) => news.regions.contains(region))
@@ -113,6 +120,9 @@ class NewsRepository {
       if (page == 1) await localService.saveNews(newsWithBookmarks);
       return newsWithBookmarks;
     } catch (e) {
+      if (e is ApiAuthException || e is ApiConfigurationException) {
+        rethrow;
+      }
       return localService
           .getCachedNews()
           .where((news) => news.category == category)
@@ -143,6 +153,9 @@ class NewsRepository {
       if (page == 1) await localService.saveNews(newsWithBookmarks);
       return newsWithBookmarks;
     } catch (e) {
+      if (e is ApiAuthException || e is ApiConfigurationException) {
+        rethrow;
+      }
       return localService.getCachedNews();
     }
   }

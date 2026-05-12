@@ -48,6 +48,15 @@ class _EconomicCalendarEvent {
   });
 }
 
+typedef _AiFallbackPickItem = ({
+  String name,
+  String linkKeyword,
+  String sectorTag,
+  String reason,
+});
+
+typedef _AiFallbackPickRow = ({String market, List<_AiFallbackPickItem> items});
+
 /// 금융 뉴스 화면
 class FinanceScreen extends ConsumerStatefulWidget {
   final bool showEconomicOnly;
@@ -4401,9 +4410,551 @@ class _FinanceKeywordTab extends ConsumerStatefulWidget {
 
 class _FinanceKeywordTabState extends ConsumerState<_FinanceKeywordTab> {
   String? _selectedKeyword;
+  bool _showBullishSectorFallback = true;
 
   final bool _stocksLoading = false;
   final List<MarketIndex> _keywordStocks = [];
+
+  List<String> _extractFallbackSectors(
+    String summary, {
+    required bool bullish,
+  }) {
+    final pattern = RegExp(bullish ? r'^강세섹터\s*:' : r'^약세섹터\s*:');
+    for (final rawLine in summary.split('\n')) {
+      final line = rawLine.trim();
+      if (!pattern.hasMatch(line)) continue;
+
+      return line
+          .replaceFirst(pattern, '')
+          .split(RegExp(r'[,，、]'))
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    return const [];
+  }
+
+  List<_AiFallbackPickRow> _extractFallbackPickRows(
+    String summary, {
+    required bool bullish,
+  }) {
+    final pickPattern = RegExp(
+      bullish
+          ? r'^강세추천\s+(코스피|코스닥|나스닥|코인)\s*:'
+          : r'^약세주의\s+(코스피|코스닥|나스닥|코인)\s*:',
+    );
+    final itemPattern = RegExp(r'^(.+?)(?:\[([^\]]+)\])?\((.+?)\)$');
+    final trailingTickerPattern = RegExp(r'^(.*?)\s+([A-Z]{2,5})$');
+
+    return summary
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => pickPattern.hasMatch(line))
+        .map((line) {
+          final match = pickPattern.firstMatch(line);
+          final market = match?.group(1) ?? '';
+          final rest = line.replaceFirst(pickPattern, '').trim();
+          final isNasdaq = market == '나스닥';
+          final isCoin = market == '코인';
+          final items = rest
+              .split(RegExp(r',\s*(?=[^)]*(?:\(|$))'))
+              .map((token) => token.trim())
+              .where((token) => token.isNotEmpty && token != '없음')
+              .map((token) {
+                final itemMatch = itemPattern.firstMatch(token);
+                final rawName = itemMatch != null
+                    ? itemMatch.group(1)!.trim()
+                    : token;
+                final sectorTag = itemMatch?.group(2)?.trim() ?? '';
+                final tickerMatch = trailingTickerPattern.firstMatch(rawName);
+                final coinEnglishKeyword = switch (rawName) {
+                  '비트코인' => 'Bitcoin',
+                  '비트코인 BTC' => 'BTC',
+                  _ => null,
+                };
+                final displayName = isNasdaq && tickerMatch != null
+                    ? tickerMatch.group(1)!.trim()
+                    : rawName;
+                final linkKeyword = isNasdaq && tickerMatch != null
+                    ? tickerMatch.group(2)!.trim()
+                    : isCoin && coinEnglishKeyword != null
+                    ? coinEnglishKeyword
+                    : rawName;
+                final reason = itemMatch?.group(3)?.trim() ?? '';
+                return (
+                  name: displayName,
+                  linkKeyword: linkKeyword,
+                  sectorTag: sectorTag,
+                  reason: reason,
+                );
+              })
+              .where((item) => item.name.trim().isNotEmpty)
+              .toList();
+
+          return (market: market, items: items);
+        })
+        .where((row) => row.items.isNotEmpty)
+        .toList();
+  }
+
+  Widget _buildSectorLeaderFallback() {
+    final aiSummaryAsync = ref.watch(aiMarketSummaryProvider);
+
+    return aiSummaryAsync.when(
+      loading: () => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                color: AppColors.accent,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              '섹터별 주도주를 불러오는 중입니다',
+              style: TextStyle(
+                color: context.colors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+      error: (_, __) => Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.analytics_outlined,
+                size: 30,
+                color: context.colors.textSecondary,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '등록 키워드는 없지만 섹터별 주도주도 아직 준비되지 않았어요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '잠시 후 다시 열면 오늘의 주도주를 자동으로 보여드립니다.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: context.colors.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      data: (summary) {
+        final bullishSectors = _extractFallbackSectors(summary, bullish: true);
+        final bearishSectors = _extractFallbackSectors(summary, bullish: false);
+        final activeRows = _extractFallbackPickRows(
+          summary,
+          bullish: _showBullishSectorFallback,
+        );
+        final activeSectors = _showBullishSectorFallback
+            ? bullishSectors
+            : bearishSectors;
+        final accentColor = _showBullishSectorFallback
+            ? AppColors.green
+            : AppColors.red;
+        final emptyText = _showBullishSectorFallback
+            ? '오늘 강세 주도주가 아직 없습니다.'
+            : '오늘 약세 점검 종목이 아직 없습니다.';
+
+        return CustomScrollView(
+          physics: const ClampingScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                      decoration: BoxDecoration(
+                        color: context.colors.surfaceLight,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: context.colors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  color: accentColor.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.hub_rounded,
+                                  size: 18,
+                                  color: accentColor,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '등록 키워드가 없어요',
+                                      style: TextStyle(
+                                        color: context.colors.textPrimary,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '대신 오늘의 섹터별 주도주를 먼저 보여드릴게요.',
+                                      style: TextStyle(
+                                        color: context.colors.textSecondary,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    if (_showBullishSectorFallback) return;
+                                    setState(() {
+                                      _showBullishSectorFallback = true;
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _showBullishSectorFallback
+                                          ? AppColors.green.withValues(
+                                              alpha: 0.12,
+                                            )
+                                          : context.colors.surface,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: _showBullishSectorFallback
+                                            ? AppColors.green.withValues(
+                                                alpha: 0.45,
+                                              )
+                                            : context.colors.border,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '강세추천',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: _showBullishSectorFallback
+                                            ? AppColors.green
+                                            : context.colors.textSecondary,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    if (!_showBullishSectorFallback) return;
+                                    setState(() {
+                                      _showBullishSectorFallback = false;
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: !_showBullishSectorFallback
+                                          ? AppColors.red.withValues(
+                                              alpha: 0.10,
+                                            )
+                                          : context.colors.surface,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: !_showBullishSectorFallback
+                                            ? AppColors.red.withValues(
+                                                alpha: 0.40,
+                                              )
+                                            : context.colors.border,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '약세주의',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: !_showBullishSectorFallback
+                                            ? AppColors.red
+                                            : context.colors.textSecondary,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (activeSectors.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Text(
+                        _showBullishSectorFallback ? '주목 강세 섹터' : '점검 약세 섹터',
+                        style: TextStyle(
+                          color: context.colors.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: activeSectors
+                            .map(
+                              (sector) => Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: accentColor.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: accentColor.withValues(alpha: 0.22),
+                                  ),
+                                ),
+                                child: Text(
+                                  sector,
+                                  style: TextStyle(
+                                    color: accentColor,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            if (activeRows.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Text(
+                    emptyText,
+                    style: TextStyle(
+                      color: context.colors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                sliver: SliverList.builder(
+                  itemCount: activeRows.length,
+                  itemBuilder: (context, index) {
+                    final row = activeRows[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                        decoration: BoxDecoration(
+                          color: context.colors.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: context.colors.border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: accentColor.withValues(alpha: 0.10),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    row.market,
+                                    style: TextStyle(
+                                      color: accentColor,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${row.items.length}개 종목',
+                                  style: TextStyle(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: row.items.map((item) {
+                                  return GestureDetector(
+                                    onTap: () {
+                                      final url =
+                                          'https://m.stock.naver.com/searchItem?keyword=${Uri.encodeComponent(item.linkKeyword)}';
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => NewsWebViewScreen(
+                                            url: url,
+                                            title: '${item.name} 주가',
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      width: 158,
+                                      height: 126,
+                                      margin: const EdgeInsets.only(right: 8),
+                                      padding: const EdgeInsets.fromLTRB(
+                                        10,
+                                        10,
+                                        10,
+                                        10,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: context.colors.surfaceLight,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: accentColor.withValues(
+                                            alpha: 0.16,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item.name,
+                                            style: TextStyle(
+                                              color: context.colors.textPrimary,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 8),
+                                          if (item.sectorTag.isNotEmpty)
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 7,
+                                                    vertical: 4,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: accentColor.withValues(
+                                                  alpha: 0.08,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                              ),
+                                              child: Text(
+                                                item.sectorTag,
+                                                style: TextStyle(
+                                                  color: accentColor,
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            )
+                                          else
+                                            const SizedBox(height: 24),
+                                          const SizedBox(height: 8),
+                                          Expanded(
+                                            child: Text(
+                                              item.reason.isNotEmpty
+                                                  ? item.reason
+                                                  : '섹터 흐름을 반영한 주도주입니다.',
+                                              style: TextStyle(
+                                                color: context
+                                                    .colors
+                                                    .textSecondary,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w500,
+                                                height: 1.4,
+                                              ),
+                                              maxLines: 3,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4411,44 +4962,7 @@ class _FinanceKeywordTabState extends ConsumerState<_FinanceKeywordTab> {
     final newsAsync = ref.watch(stockMarketNewsProvider);
 
     if (keywords.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                color: context.colors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: context.colors.border),
-              ),
-              child: Icon(
-                Icons.search_outlined,
-                size: 28,
-                color: context.colors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '등록된 키워드가 없어요',
-              style: TextStyle(
-                color: context.colors.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '설정 탭에서 키워드를 추가해보세요',
-              style: TextStyle(
-                color: context.colors.textSecondary,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      );
+      return _buildSectorLeaderFallback();
     }
 
     if (_selectedKeyword != null && !keywords.contains(_selectedKeyword)) {

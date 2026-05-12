@@ -31,6 +31,16 @@ class FinanceRepository {
       debugPrint('✅ [FinanceRepo] API 완료 → ${news.length}건 캐시 저장');
       return news;
     } catch (e) {
+      if (e is ApiAuthException || e is ApiConfigurationException) {
+        final cached = localService.getCachedFinanceNews();
+        if (cached.isNotEmpty) {
+          debugPrint('⚠️ [FinanceRepo] 인증 실패, 캐시 반환 → ${cached.length}건');
+          return cached;
+        }
+        debugPrint('⛔ [FinanceRepo] 인증/설정 오류: $e');
+        rethrow;
+      }
+
       // Rate limit 특별 처리
       if (e.toString().contains('429')) {
         debugPrint('⏱️ [FinanceRepo] Rate limit 감지, 캐시 TTL 연장');

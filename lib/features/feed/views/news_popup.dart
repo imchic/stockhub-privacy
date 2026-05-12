@@ -17,6 +17,8 @@ void showUrlNewsSheet(
   String? keyword,
   String? url,
 }) {
+  final parentContext = context;
+
   showModalBottomSheet(
     context: context,
     useSafeArea: true,
@@ -98,7 +100,13 @@ void showUrlNewsSheet(
                         importanceLevel: 3,
                         category: '',
                       );
-                      openNewsWithAdV2(context, news: tempNews);
+                      Navigator.pop(context);
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!parentContext.mounted) return;
+                        unawaited(
+                          openNewsWithAdV2(parentContext, news: tempNews),
+                        );
+                      });
                     },
                     icon: const Icon(Icons.open_in_new, size: 16),
                     label: const Text('전체 보기'),
@@ -159,12 +167,15 @@ void showNewsDetailSheet(
   bool showBookmark = true,
   String? contextLabel,
 }) {
+  final parentContext = context;
+
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
     builder: (_) => _NewsDetailSheet(
+      parentContext: parentContext,
       news: news,
       showBookmark: showBookmark,
       contextLabel: contextLabel,
@@ -173,11 +184,13 @@ void showNewsDetailSheet(
 }
 
 class _NewsDetailSheet extends ConsumerStatefulWidget {
+  final BuildContext parentContext;
   final News news;
   final bool showBookmark;
   final String? contextLabel;
 
   const _NewsDetailSheet({
+    required this.parentContext,
     required this.news,
     this.showBookmark = true,
     this.contextLabel,
@@ -601,8 +614,21 @@ class _NewsDetailSheetState extends ConsumerState<_NewsDetailSheet> {
                               if (news.newsUrl.isNotEmpty)
                                 Expanded(
                                   child: ElevatedButton.icon(
-                                    onPressed: () =>
-                                        openNewsWithAdV2(context, news: news),
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      WidgetsBinding.instance
+                                          .addPostFrameCallback((_) {
+                                            if (!widget.parentContext.mounted) {
+                                              return;
+                                            }
+                                            unawaited(
+                                              openNewsWithAdV2(
+                                                widget.parentContext,
+                                                news: news,
+                                              ),
+                                            );
+                                          });
+                                    },
                                     icon: const Icon(
                                       Icons.open_in_new,
                                       size: 16,

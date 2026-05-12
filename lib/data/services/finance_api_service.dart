@@ -6,12 +6,15 @@ import 'package:http/http.dart' as http;
 import '../../config/constants.dart';
 import '../../utils/text_sanitizer.dart';
 import '../models/index.dart';
+import 'api_exceptions.dart';
 import 'api_rate_limiter.dart';
 
 /// 금융 뉴스 API 서비스 (코스피, 나스닥 등)
 class FinanceApiService {
   static const String _baseUrl = 'https://newsapi.org/v2';
   static const String _apiKey = AppConstants.newsApiKey;
+  static bool _authLocked = false;
+  static String? _authLockReason;
 
   // NewsAPI source.name → 한글 언론사명
   static const _newsApiSourceToKo = {
@@ -97,6 +100,30 @@ class FinanceApiService {
   };
 
   FinanceApiService({http.Client? client}) : _client = client ?? http.Client();
+
+  static bool get hasConfiguredApiKey => _apiKey.trim().isNotEmpty;
+
+  void _ensureConfigured() {
+    if (!hasConfiguredApiKey) {
+      throw const ApiConfigurationException(
+        'NewsAPI 키가 비어 있습니다. env.json의 NEWS_API_KEY 값을 확인하세요.',
+      );
+    }
+  }
+
+  void _ensureAuthAvailable() {
+    if (_authLocked) {
+      throw ApiAuthException(
+        _authLockReason ?? 'NewsAPI 인증 실패가 감지되어 이후 요청을 차단합니다.',
+      );
+    }
+  }
+
+  void _lockAuthentication(String responseBody) {
+    _authLocked = true;
+    _authLockReason =
+        'NewsAPI 인증 실패가 감지되었습니다. env.json의 NEWS_API_KEY 값을 확인하세요. 응답: $responseBody';
+  }
 
   /// 코스피 뉴스 검색
   Future<List<FinanceNews>> getKospiNews({
@@ -188,6 +215,9 @@ class FinanceApiService {
     int pageSize = 20,
     String sortBy = 'publishedAt',
   }) async {
+    _ensureConfigured();
+    _ensureAuthAvailable();
+
     // Rate Limiter 체크
     if (!_rateLimiter.canMakeRequest()) {
       debugPrint('⏳ [NewsAPI] Rate Limiter에 의해 요청 차단됨');
@@ -249,6 +279,12 @@ class FinanceApiService {
         debugPrint('⏳ [NewsAPI] Rate Limit: ${response.statusCode} — $message');
         _rateLimiter.recordFailure(); // 실패 기록
         throw Exception('Rate Limit: $message');
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        debugPrint(
+          '⛔ [NewsAPI] 인증 실패: ${response.statusCode} — ${response.body.substring(0, response.body.length.clamp(0, 200))}',
+        );
+        _lockAuthentication(response.body);
+        throw ApiAuthException(_authLockReason!);
       } else {
         debugPrint(
           '❌ [NewsAPI] HTTP 오류: ${response.statusCode} — ${response.body.substring(0, response.body.length.clamp(0, 200))}',

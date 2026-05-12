@@ -365,14 +365,14 @@ class AlertSettingsNotifier extends StateNotifier<AlertSettings> {
     final notificationsEnabled =
         ref.read(userPreferenceProvider).valueOrNull?.notificationsEnabled ??
         false;
-    if (value && notificationsEnabled) {
-      final scheduled = await NotificationService.scheduleMarketAlerts();
-      if (!scheduled) {
-        state = state.copyWith(marketHoursEnabled: false);
-        await state.save();
-      }
-    } else {
-      await NotificationService.cancelMarketAlerts();
+    final scheduled = await syncMarketAlerts(
+      notificationsEnabled: notificationsEnabled,
+      onboardingSeen: true,
+      marketHoursEnabled: value,
+    );
+    if (value && notificationsEnabled && !scheduled) {
+      state = state.copyWith(marketHoursEnabled: false);
+      await state.save();
     }
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../config/index.dart';
+import '../../../data/models/index.dart';
 import '../../../providers/index.dart';
 import '../../../services/app_update_service.dart';
 import '../../../utils/app_toast.dart';
@@ -861,30 +862,141 @@ class _AppearanceSettings extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final darkMode =
-        ref.watch(userPreferenceProvider).valueOrNull?.darkMode ?? false;
+    final selectedMode =
+        ref.watch(userPreferenceProvider).valueOrNull?.themeMode ??
+        UserPreference.themeModeSystem;
+    final deviceBrightness = MediaQuery.platformBrightnessOf(context);
+    final isDeviceDark = deviceBrightness == Brightness.dark;
+    final deviceThemeLabel = isDeviceDark ? '다크' : '라이트';
 
-    return InkWell(
-      onTap: () async {
-        await ref.read(toggleDarkModeProvider(!darkMode).future);
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '다크 모드',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: context.colors.textPrimary,
-              ),
+    Future<void> updateThemeMode(String mode) async {
+      if (selectedMode == mode) return;
+      await ref.read(setThemeModeProvider(mode).future);
+    }
+
+    Widget buildChoice({
+      required String label,
+      required String mode,
+      required Color color,
+    }) {
+      return _ThresholdChoiceChip(
+        label: label,
+        color: color,
+        selected: selectedMode == mode,
+        onTap: () => updateThemeMode(mode),
+      );
+    }
+
+    final helperText = switch (selectedMode) {
+      UserPreference.themeModeLight => '항상 라이트 테마를 사용합니다.',
+      UserPreference.themeModeDark => '항상 다크 테마를 사용합니다.',
+      _ => '최초 기본값이며, 기기 테마 변경을 자동으로 따라갑니다.',
+    };
+    final appliedThemeLabel = switch (selectedMode) {
+      UserPreference.themeModeLight => '앱 적용: 라이트',
+      UserPreference.themeModeDark => '앱 적용: 다크',
+      _ => '앱 적용: 기기 테마 따라감',
+    };
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '앱 테마',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: context.colors.textPrimary,
             ),
-            _Toggle(value: darkMode, activeColor: AppColors.accent),
-          ],
-        ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            helperText,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: context.colors.textSecondary,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: context.colors.surfaceLight,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: context.colors.border),
+                ),
+                child: Text(
+                  '기기 테마: $deviceThemeLabel',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: context.colors.textSecondary,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: selectedMode == UserPreference.themeModeSystem
+                      ? AppColors.accent.withValues(alpha: 0.10)
+                      : context.colors.surfaceLight,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: selectedMode == UserPreference.themeModeSystem
+                        ? AppColors.accent.withValues(alpha: 0.28)
+                        : context.colors.border,
+                  ),
+                ),
+                child: Text(
+                  appliedThemeLabel,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: selectedMode == UserPreference.themeModeSystem
+                        ? AppColors.accent
+                        : context.colors.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              buildChoice(
+                label: '사용자 설정',
+                mode: UserPreference.themeModeSystem,
+                color: AppColors.accent,
+              ),
+              buildChoice(
+                label: '라이트',
+                mode: UserPreference.themeModeLight,
+                color: AppColors.orange,
+              ),
+              buildChoice(
+                label: '다크',
+                mode: UserPreference.themeModeDark,
+                color: AppColors.green,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

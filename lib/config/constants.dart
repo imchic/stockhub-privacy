@@ -40,11 +40,11 @@ class AppConstants {
   static const String supportTeamName = 'PinStock 운영팀';
   static const String supportResponseHours = '평일 10:00 - 18:00 (KST)';
   static const String supportWebsiteUrl =
-      'https://imchic.github.io/pinstock-privacy/docs/index.html';
+      'https://imchic.github.io/pinstock-privacy/';
   static const String supportContactPageUrl =
-      'https://imchic.github.io/pinstock-privacy/docs/contact.html';
+      'https://imchic.github.io/pinstock-privacy/contact.html';
   static const String privacyPolicyUrl =
-      'https://imchic.github.io/pinstock-privacy/docs/privacy_policy.html';
+      'https://imchic.github.io/pinstock-privacy/privacy_policy.html';
 
   // 시간 설정
   static const int apiRefreshIntervalMinutes = 10;

@@ -95,8 +95,8 @@ class UserPreferenceRepository {
     await localService.saveUserPreference(updated);
   }
 
-  /// 다크 모드 토글
-  Future<void> toggleDarkMode(bool enabled) async {
+  /// 테마 모드 변경
+  Future<void> setThemeMode(String themeMode) async {
     var preference = localService.getUserPreference();
 
     preference ??= UserPreference(
@@ -106,7 +106,9 @@ class UserPreferenceRepository {
     );
 
     final updated = preference.copyWith(
-      darkMode: enabled,
+      themeMode: UserPreference.isSupportedThemeMode(themeMode)
+          ? themeMode
+          : UserPreference.themeModeSystem,
       lastUpdatedAt: DateTime.now(),
     );
     await localService.saveUserPreference(updated);

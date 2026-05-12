@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/models/index.dart';
+import '../data/services/api_exceptions.dart';
 import 'repositories_provider.dart';
 import 'user_preference_providers.dart';
 
@@ -265,9 +266,16 @@ final stockMarketNewsProvider = FutureProvider<List<News>>((ref) async {
     '트럼프 관세 무역 인플레이션 경기침체 환율 유가 금값 원유 OPEC 중동 이스라엘 이란',
     '비트코인 이더리움 ETF 규제 유동성 달러 금리 위험자산',
   ];
-  // 관심 키워드도 초기 부하를 줄이기 위해 최대 2개만 추가
-  final favQueries = favoriteKeywords.take(2).toList();
-  final queries = [...baseQueries, ...favQueries];
+  final sectorLeaderQueries = [
+    '강세섹터 약세섹터 주도주 순환매 수급 급등 급락',
+    '반도체 AI 전력기기 원전 방산 조선 금융 바이오 주도주',
+    '2차전지 로봇 화장품 엔터 게임 제약 유리기판 주도주',
+  ];
+  // 관심 키워드가 없으면 섹터 주도주 기반 쿼리로 종목 풀을 넓힌다.
+  final extraQueries = favoriteKeywords.isEmpty
+      ? sectorLeaderQueries
+      : favoriteKeywords.take(2).toList();
+  final queries = [...baseQueries, ...extraQueries];
 
   try {
     debugPrint('📡 증시 뉴스: ${queries.length}개 쿼리 순차 실행 중...');
@@ -285,6 +293,12 @@ final stockMarketNewsProvider = FutureProvider<List<News>>((ref) async {
           to: now,
         );
         results.add(result);
+      } on ApiAuthException catch (error) {
+        debugPrint('⛔ 증시 뉴스 중단: $error');
+        rethrow;
+      } on ApiConfigurationException catch (error) {
+        debugPrint('⛔ 증시 뉴스 중단: $error');
+        rethrow;
       } catch (_) {
         results.add([]);
       }

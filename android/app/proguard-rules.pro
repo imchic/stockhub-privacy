@@ -10,6 +10,8 @@
 -keepattributes Signature
 -keepattributes *Annotation*
 -keepattributes EnclosingMethod
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
 -keep class sun.misc.Unsafe { *; }
 -keep class com.google.gson.stream.** { *; }
 -keep class * implements com.google.gson.TypeAdapterFactory

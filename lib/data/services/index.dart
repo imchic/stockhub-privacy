@@ -2,6 +2,7 @@
 library;
 
 export 'ai_summary_service.dart';
+export 'api_exceptions.dart';
 export 'api_service.dart';
 export 'economic_calendar_service.dart';
 export 'finance_api_service.dart';

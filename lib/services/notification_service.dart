@@ -13,6 +13,21 @@ import 'package:timezone/standalone.dart' as tz;
 import '../data/models/index.dart';
 import 'market_calendar_service.dart';
 
+Future<bool> syncMarketAlerts({
+  required bool notificationsEnabled,
+  required bool onboardingSeen,
+  required bool marketHoursEnabled,
+}) async {
+  final shouldSchedule =
+      notificationsEnabled && onboardingSeen && marketHoursEnabled;
+  if (!shouldSchedule) {
+    await NotificationService.cancelMarketAlerts();
+    return false;
+  }
+
+  return NotificationService.scheduleMarketAlerts();
+}
+
 /// 로컬 푸시 알림 서비스
 ///
 /// 사용법:
@@ -25,6 +40,7 @@ class NotificationService {
   static const _androidRecoveryChannel = MethodChannel(
     'com.imchic.stockhub/notification_cache',
   );
+  static const _marketHoursTestNotificationId = 39999991;
   static const _marketAlertsScheduledKey = 'market_alerts_scheduled';
   static const _marketAlertNotificationIdsKey = 'market_alert_notification_ids';
   static const _deepLinkDedupWindow = Duration(seconds: 2);
@@ -74,7 +90,7 @@ class NotificationService {
   );
 
   // ─── 장 시작/마감 채널 ──────────────────────────────
-  static const _marketChannelId = 'PinStock_market';
+  static const _marketChannelId = 'PinStock_market_v2';
   static const _marketChannelName = '장 시작/마감 알림';
   static const _marketChannelDesc = '코스피·NXT 주요 장 시작 및 마감 사전 알림';
   static const _legacyMarketAlertIds = <int>[
@@ -99,6 +115,7 @@ class NotificationService {
     _marketChannelId,
     _marketChannelName,
     description: _marketChannelDesc,
+    importance: Importance.high,
   );
 
   // ─── 키워드 채널 ──────────────────────────────────
@@ -249,6 +266,61 @@ class NotificationService {
         ?.canScheduleExactNotifications();
 
     return granted ?? false;
+  }
+
+  static Future<bool> scheduleMarketHoursTestNotification({
+    Duration delay = const Duration(minutes: 1),
+  }) async {
+    final notificationsGranted = await requestNotificationsPermission();
+    if (!notificationsGranted) {
+      debugPrint('장 시작/마감 테스트 알림 예약 중단: 알림 권한이 없습니다.');
+      return false;
+    }
+
+    if (Platform.isAndroid) {
+      final exactGranted = await requestExactAlarmsPermission();
+      if (!exactGranted) {
+        debugPrint('장 시작/마감 테스트 알림 예약 중단: exact alarm 권한이 없습니다.');
+        return false;
+      }
+    }
+
+    final seoul = tz.getLocation('Asia/Seoul');
+    final scheduledAt = tz.TZDateTime.now(seoul).add(delay);
+
+    const notifDetails = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _marketChannelId,
+        _marketChannelName,
+        channelDescription: _marketChannelDesc,
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+        category: AndroidNotificationCategory.reminder,
+      ),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        interruptionLevel: InterruptionLevel.timeSensitive,
+      ),
+    );
+
+    await _plugin.cancel(_marketHoursTestNotificationId);
+    await _plugin.zonedSchedule(
+      _marketHoursTestNotificationId,
+      '장 시작/마감 테스트용 알림',
+      '1분 뒤 장 시작/마감 알림 수신 여부를 확인하는 임시 테스트입니다.',
+      scheduledAt,
+      notifDetails,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      payload: 'market_hours_test_notification',
+    );
+
+    debugPrint('장 시작/마감 테스트 알림 예약 완료: ${scheduledAt.toIso8601String()}');
+    return true;
   }
 
   static Future<bool> requestBatteryOptimizationExemption() async {
@@ -506,26 +578,32 @@ class NotificationService {
     ),
     _MarketAlertDefinition(
       slot: 13,
-      hour: 15,
-      minute: 35,
+      hour: 16,
+      minute: 55,
       title: 'NXT 애프터마켓 시작 5분 전',
       body: 'NXT 애프터마켓이 5분 뒤 시작됩니다.',
     ),
     _MarketAlertDefinition(
       slot: 14,
-      hour: 15,
-      minute: 39,
+      hour: 16,
+      minute: 59,
       title: 'NXT 애프터마켓 시작 1분 전',
       body: 'NXT 애프터마켓이 1분 뒤 시작됩니다.',
     ),
     _MarketAlertDefinition(
       slot: 15,
-      hour: 15,
-      minute: 40,
+      hour: 17,
+      minute: 0,
       title: 'NXT 애프터마켓 시작',
       body: 'NXT 애프터마켓이 시작됐습니다.',
     ),
   ];
+  static const _androidExactAlarmHeadroom = 80;
+
+  static int get _androidMarketAlertTradingDayLimit {
+    const availableSlots = 500 - _androidExactAlarmHeadroom;
+    return availableSlots ~/ _marketAlertDefinitions.length;
+  }
 
   /// NXT와 코스피 주요 장 시작·마감 알림을 거래일에만 예약
   static Future<bool> scheduleMarketAlerts() async {
@@ -558,7 +636,7 @@ class NotificationService {
 
         final tradingDays = MarketCalendarService.upcomingKoreanTradingDays(
           startDate: now,
-        );
+        ).take(Platform.isAndroid ? _androidMarketAlertTradingDayLimit : 120);
         for (final tradingDay in tradingDays) {
           for (final definition in _marketAlertDefinitions) {
             await _scheduleMarketAlertDefinition(

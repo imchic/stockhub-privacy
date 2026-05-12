@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../../config/constants.dart';
 import '../models/index.dart';
+import 'api_exceptions.dart';
 import 'press_cache_service.dart';
 
 /// 네이버 뉴스 검색 API 서비스
@@ -22,6 +23,8 @@ class NaverNewsService {
   static Future<void> _requestQueue = Future<void>.value();
   static DateTime? _lastRequestAt;
   static DateTime? _cooldownUntil;
+  static bool _authLocked = false;
+  static String? _authLockReason;
 
   final http.Client _client;
   final PressCacheService _pressCache;
@@ -36,6 +39,31 @@ class NaverNewsService {
     if (_verboseLogging) {
       debugPrint(message);
     }
+  }
+
+  static bool get hasConfiguredCredentials =>
+      _clientId.trim().isNotEmpty && _clientSecret.trim().isNotEmpty;
+
+  void _ensureConfigured() {
+    if (!hasConfiguredCredentials) {
+      throw const ApiConfigurationException(
+        'Naver API 자격증명이 비어 있습니다. env.json의 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 값을 확인하세요.',
+      );
+    }
+  }
+
+  void _ensureAuthAvailable() {
+    if (_authLocked) {
+      throw ApiAuthException(
+        _authLockReason ?? 'Naver API 인증 실패가 감지되어 이후 요청을 차단합니다.',
+      );
+    }
+  }
+
+  void _lockAuthentication(String responseBody) {
+    _authLocked = true;
+    _authLockReason =
+        'Naver API 인증 실패가 감지되었습니다. env.json의 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 값을 확인하세요. 응답: $responseBody';
   }
 
   Future<T> _enqueueRequest<T>(Future<T> Function() action) {
@@ -84,6 +112,8 @@ class NaverNewsService {
   }) async {
     return _enqueueRequest(() async {
       try {
+        _ensureConfigured();
+        _ensureAuthAvailable();
         await _waitForRateLimitWindow();
 
         final uri = Uri.parse('$_baseUrl/news.json').replace(
@@ -116,6 +146,14 @@ class NaverNewsService {
 
           _logVerbose('✅ ${items.length}개 기사 수신: $query');
           return items.map((item) => _parseNews(item)).toList();
+        }
+
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          _lockAuthentication(response.body);
+          debugPrint(
+            '⛔ Naver API 인증 실패: ${response.statusCode} — ${response.body}',
+          );
+          throw ApiAuthException(_authLockReason!);
         }
 
         if (response.statusCode == 429) {

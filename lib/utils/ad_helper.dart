@@ -6,11 +6,11 @@ import 'package:flutter/foundation.dart';
 class AdHelper {
   // ── Android 실제 ID ──
   static const String _androidBannerId =
-      'ca-app-pub-1570138379392319/3033216468';
+      'ca-app-pub-1570138379392319~3324722823';
   static const String _androidInterstitialId =
-      'ca-app-pub-1570138379392319/7776180755';
+      'ca-app-pub-1570138379392319/9670254880';
   static const String _androidAppOpenId =
-      'ca-app-pub-1570138379392319/3822872736';
+      'ca-app-pub-1570138379392319/5024432867';
 
   // ── Google 공식 테스트 ID ──
   static const String _testBannerIdAndroid =

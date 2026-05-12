@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:charset/charset.dart' as charset;
 import 'package:flutter/foundation.dart';
 import 'package:html/dom.dart' as html;
 import 'package:html/parser.dart' as html_parser;
@@ -99,6 +100,7 @@ class ArticleContentCrawler {
 
       debugPrint('✅ HTML 파싱 ${body.length} bytes');
       final doc = html_parser.parse(body);
+      final structuredArticle = _extractStructuredArticle(doc);
 
       // 뉴스사별 전용 파서 시도
       final host = uri.host.replaceFirst('www.', '');
@@ -118,30 +120,43 @@ class ArticleContentCrawler {
           debugPrint('🔀 SBS Biz → AMP: $ampUrl');
           return crawlArticle(ampUrl);
         }
-        return _parseSBSBiz(doc, url);
+        return _mergeStructuredFallback(
+          _parseSBSBiz(doc, url),
+          structuredArticle,
+        );
       }
 
       // 주요 뉴스사별 파서
-      if (host.contains('chosun.com')) {
-        return _parseChosun(doc, url);
-      } else if (host.contains('donga.com')) {
-        return _parseDonga(doc, url);
-      } else if (host.contains('mk.co.kr')) {
-        return _parseMaeilKyungje(doc, url);
-      } else if (host.contains('magazine.hankyung.com')) {
-        return _parseHankyungMagazine(doc, url);
-      } else if (host.contains('hankyung.com')) {
-        return _parseHankyung(doc, url);
-      } else if (host.contains('sedaily.com')) {
-        return _parseSeoulEconomic(doc, url);
-      } else if (host.contains('etnews.com')) {
-        return _parseETNews(doc, url);
-      } else if (host.contains('etoday.co.kr')) {
-        return _parseEtoday(doc, url);
-      }
-
-      // 일반적인 파서
-      return _parseGeneric(doc, url);
+      final parsed = switch (host) {
+        final value when value.contains('chosun.com') => _parseChosun(doc, url),
+        final value when value.contains('donga.com') => _parseDonga(doc, url),
+        final value when value.contains('mk.co.kr') => _parseMaeilKyungje(
+          doc,
+          url,
+        ),
+        final value when value.contains('naeil.com') => _parseNaeil(doc, url),
+        final value when value.contains('magazine.hankyung.com') =>
+          _parseHankyungMagazine(doc, url),
+        final value when value.contains('hankyung.com') => _parseHankyung(
+          doc,
+          url,
+        ),
+        final value when value.contains('sedaily.com') => _parseSeoulEconomic(
+          doc,
+          url,
+        ),
+        final value when value.contains('etnews.com') => _parseETNews(doc, url),
+        final value when value.contains('etoday.co.kr') => _parseEtoday(
+          doc,
+          url,
+        ),
+        final value when value.contains('tokenpost.kr') => _parseTokenPost(
+          doc,
+          url,
+        ),
+        _ => _parseGeneric(doc, url),
+      };
+      return _mergeStructuredFallback(parsed, structuredArticle);
     } on TimeoutException {
       debugPrint('❌ 타임아웃 (15초)');
       return ArticleContent.error('[4] 요청 시간 초과 (15초)');
@@ -243,6 +258,37 @@ class ArticleContentCrawler {
       );
     } catch (e) {
       debugPrint('⚠️ 매일경제 파서 실패: $e');
+      return _parseGeneric(doc, url);
+    }
+  }
+
+  ArticleContent _parseNaeil(html.Document doc, String url) {
+    try {
+      final contentEl =
+          doc.querySelector('div.article-view') ??
+          doc.querySelector('div.article_txt') ??
+          doc.querySelector('div.view_con');
+
+      if (contentEl == null) {
+        return _parseGeneric(doc, url);
+      }
+
+      final title = _extractTitle(doc);
+      final content = _extractRichParagraphs(contentEl);
+      final images = _extractImages(doc, contentEl);
+
+      if (content.isEmpty) {
+        return _parseGeneric(doc, url);
+      }
+
+      debugPrint('📰 [내일신문] $title');
+      return ArticleContent(
+        title: sanitizeHtmlText(title),
+        content: sanitizeHtmlText(content),
+        imageUrls: images,
+      );
+    } catch (e) {
+      debugPrint('⚠️ 내일신문 파서 실패: $e');
       return _parseGeneric(doc, url);
     }
   }
@@ -426,6 +472,37 @@ class ArticleContentCrawler {
     }
   }
 
+  ArticleContent _parseTokenPost(html.Document doc, String url) {
+    try {
+      final contentEl =
+          doc.querySelector('div.article_content[itemprop="articleBody"]') ??
+          doc.querySelector('div.article_content') ??
+          doc.querySelector('div.view_text');
+
+      if (contentEl == null) {
+        return _parseGeneric(doc, url);
+      }
+
+      final title = _extractTitle(doc);
+      final content = _extractRichParagraphs(contentEl);
+      final images = _extractImages(doc, contentEl);
+
+      if (content.isEmpty) {
+        return _parseGeneric(doc, url);
+      }
+
+      debugPrint('📰 [토큰포스트] $title');
+      return ArticleContent(
+        title: sanitizeHtmlText(title),
+        content: sanitizeHtmlText(content),
+        imageUrls: images,
+      );
+    } catch (e) {
+      debugPrint('⚠️ 토큰포스트 파서 실패: $e');
+      return _parseGeneric(doc, url);
+    }
+  }
+
   ArticleContent _parseSBSBiz(html.Document doc, String url) {
     try {
       // SBS Biz AMP: div.acem_text
@@ -524,6 +601,187 @@ class ArticleContentCrawler {
       debugPrint('❌ 일반 파서 실패: $e');
       return ArticleContent.error('기사 파싱 실패');
     }
+  }
+
+  ArticleContent? _extractStructuredArticle(html.Document doc) {
+    ArticleContent? best;
+
+    for (final script in doc.querySelectorAll(
+      'script[type="application/ld+json"]',
+    )) {
+      final rawJson = script.text.trim();
+      if (rawJson.isEmpty) continue;
+
+      try {
+        final decoded = jsonDecode(rawJson);
+        for (final node in _collectStructuredNodes(decoded)) {
+          if (!_isStructuredArticleNode(node)) continue;
+
+          final content = sanitizeHtmlText(_extractStructuredBody(node));
+          if (content.length < 80) continue;
+
+          final title = sanitizeHtmlText(
+            _extractStructuredString(node['headline']) ??
+                _extractStructuredString(node['name']) ??
+                '기사 본문',
+          );
+          final images = _extractStructuredImages(node);
+          final author = _extractStructuredAuthor(node['author']);
+          final publishedAt = _extractStructuredDate(node['datePublished']);
+          final candidate = ArticleContent(
+            title: title,
+            content: content,
+            imageUrls: images,
+            author: author,
+            publishedAt: publishedAt,
+          );
+
+          if (best == null || candidate.content.length > best.content.length) {
+            best = candidate;
+          }
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+
+    if (best != null) {
+      debugPrint('🧩 JSON-LD 본문 후보 확보: ${best.content.length}자');
+    }
+    return best;
+  }
+
+  Iterable<Map<String, dynamic>> _collectStructuredNodes(dynamic node) sync* {
+    if (node is Map<String, dynamic>) {
+      yield node;
+      for (final value in node.values) {
+        yield* _collectStructuredNodes(value);
+      }
+      return;
+    }
+
+    if (node is List) {
+      for (final item in node) {
+        yield* _collectStructuredNodes(item);
+      }
+    }
+  }
+
+  bool _isStructuredArticleNode(Map<String, dynamic> node) {
+    final rawType = node['@type'];
+    final types = <String>{};
+    if (rawType is String) {
+      types.add(rawType);
+    } else if (rawType is List) {
+      types.addAll(rawType.whereType<String>());
+    }
+
+    const articleTypes = {
+      'Article',
+      'NewsArticle',
+      'ReportageNewsArticle',
+      'AnalysisNewsArticle',
+      'BlogPosting',
+    };
+
+    return types.any(articleTypes.contains) || node['articleBody'] != null;
+  }
+
+  ArticleContent _mergeStructuredFallback(
+    ArticleContent parsed,
+    ArticleContent? structured,
+  ) {
+    if (structured == null) {
+      return parsed;
+    }
+
+    final shouldUseStructured =
+        !parsed.success || parsed.content.trim().length < 120;
+
+    if (shouldUseStructured) {
+      debugPrint('🧩 JSON-LD 본문 fallback 사용');
+      return structured;
+    }
+
+    return ArticleContent(
+      title: parsed.title.isNotEmpty ? parsed.title : structured.title,
+      content: parsed.content,
+      imageUrls: parsed.imageUrls.isNotEmpty
+          ? parsed.imageUrls
+          : structured.imageUrls,
+      author: parsed.author ?? structured.author,
+      publishedAt: parsed.publishedAt ?? structured.publishedAt,
+      success: parsed.success,
+      errorMessage: parsed.errorMessage,
+    );
+  }
+
+  String _extractStructuredBody(Map<String, dynamic> node) {
+    return _extractStructuredString(node['articleBody']) ??
+        _extractStructuredString(node['description']) ??
+        '';
+  }
+
+  String? _extractStructuredString(dynamic value) {
+    if (value is String) return value;
+    if (value is List) {
+      final joined = value
+          .map(_extractStructuredString)
+          .whereType<String>()
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .join('\n\n');
+      return joined.isEmpty ? null : joined;
+    }
+    if (value is Map<String, dynamic>) {
+      return _extractStructuredString(
+        value['@value'] ?? value['text'] ?? value['name'],
+      );
+    }
+    return null;
+  }
+
+  List<String> _extractStructuredImages(Map<String, dynamic> node) {
+    final images = <String>{};
+
+    void addImage(dynamic value) {
+      if (value is String && value.isNotEmpty) {
+        images.add(value);
+      } else if (value is List) {
+        for (final item in value) {
+          addImage(item);
+        }
+      } else if (value is Map<String, dynamic>) {
+        addImage(value['url'] ?? value['contentUrl']);
+      }
+    }
+
+    addImage(node['image']);
+    return images.take(3).toList();
+  }
+
+  String? _extractStructuredAuthor(dynamic value) {
+    if (value is String && value.trim().isNotEmpty) {
+      return value.trim();
+    }
+    if (value is List) {
+      final authors = value
+          .map(_extractStructuredAuthor)
+          .whereType<String>()
+          .where((item) => item.isNotEmpty)
+          .toList();
+      return authors.isEmpty ? null : authors.join(', ');
+    }
+    if (value is Map<String, dynamic>) {
+      return _extractStructuredString(value['name']);
+    }
+    return null;
+  }
+
+  DateTime? _extractStructuredDate(dynamic value) {
+    final raw = _extractStructuredString(value);
+    if (raw == null || raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
   }
 
   // ── 헬퍼 메서드 ──────────────────────────────────────
@@ -710,6 +968,45 @@ class ArticleContentCrawler {
     return paragraphs.join('\n\n');
   }
 
+  String _extractRichParagraphs(html.Element container) {
+    final paragraphs = <String>[];
+    final seen = <String>{};
+
+    void addIfNew(String text) {
+      final normalized = sanitizeHtmlText(text);
+      if (normalized.isNotEmpty &&
+          !_isNoiseText(normalized) &&
+          seen.add(normalized)) {
+        paragraphs.add(normalized);
+      }
+    }
+
+    final rawHtml = container.innerHtml
+        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</p\s*>', caseSensitive: false), '\n\n')
+        .replaceAll(RegExp(r'</div\s*>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</li\s*>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</figure\s*>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</h[1-6]\s*>', caseSensitive: false), '\n');
+
+    final plainText = html_parser.parseFragment(rawHtml).text ?? '';
+    final lines = plainText
+        .split(RegExp(r'\n{1,}|\r+'))
+        .map((item) => item.trim())
+        .where((item) => item.length > 20)
+        .toList();
+
+    for (final line in lines) {
+      addIfNew(line);
+    }
+
+    if (paragraphs.isEmpty) {
+      return _extractParagraphs(container);
+    }
+
+    return paragraphs.join('\n\n');
+  }
+
   List<String> _extractImages(html.Document doc, html.Element contentEl) {
     final images = <String, String>{};
 
@@ -751,20 +1048,58 @@ class ArticleContentCrawler {
 
   String _decodeResponse(http.Response response) {
     try {
-      // Content-Type에서 charset 검사
-      final contentType = response.headers['content-type'] ?? '';
+      final charsetName = _detectCharset(response);
+      final bytes = response.bodyBytes;
 
-      // EUC-KR은 Dart에서 기본 지원 안 함
-      if (contentType.contains('euc-kr') || contentType.contains('ks_c_5601')) {
-        debugPrint('⚠️ EUC-KR 인코딩: 파싱 스킵');
-        return '';
+      if (charsetName == 'euc-kr') {
+        debugPrint('🔤 EUC-KR 디코딩 적용');
+        return charset.eucKr.decode(bytes);
       }
 
-      // UTF-8로 디코딩 시도
-      return utf8.decode(response.bodyBytes);
+      if (charsetName == 'latin1') {
+        return latin1.decode(bytes, allowInvalid: true);
+      }
+
+      return utf8.decode(bytes, allowMalformed: true);
     } catch (e) {
       debugPrint('⚠️ 인코딩 실패: $e');
       return '';
     }
+  }
+
+  String _detectCharset(http.Response response) {
+    final headerCharset = _extractCharsetName(
+      response.headers['content-type'] ?? '',
+    );
+    if (headerCharset != null) {
+      return headerCharset;
+    }
+
+    final preview = latin1.decode(
+      response.bodyBytes.take(4096).toList(),
+      allowInvalid: true,
+    );
+    final metaCharset = _extractCharsetName(preview);
+    return metaCharset ?? 'utf-8';
+  }
+
+  String? _extractCharsetName(String value) {
+    final lower = value.toLowerCase();
+    final match = RegExp(
+      "charset\\s*=\\s*['\\\"]?([a-z0-9_-]+)",
+    ).firstMatch(lower);
+    final charsetName = match?.group(1);
+    if (charsetName == null) return null;
+
+    if (charsetName.contains('euc-kr') ||
+        charsetName.contains('ks_c_5601') ||
+        charsetName.contains('cp949') ||
+        charsetName.contains('windows-949')) {
+      return 'euc-kr';
+    }
+    if (charsetName.contains('8859-1') || charsetName.contains('latin1')) {
+      return 'latin1';
+    }
+    return charsetName;
   }
 }

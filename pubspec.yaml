@@ -6,7 +6,7 @@ publish_to: 'none'
 
 # 앱 버전: build-name+build-number 형식
 # Android: versionName/versionCode, iOS: CFBundleShortVersionString/CFBundleVersion
-version: 1.0.0+21
+version: 1.0.0+23
 
 environment:
   sdk: ^3.9.2
@@ -26,6 +26,7 @@ dependencies:
   http: ^1.2.0
   dio: ^5.4.0
   html: ^0.15.4
+  charset: ^2.0.1
 
   # Data & Serialization
   json_annotation: ^4.8.0

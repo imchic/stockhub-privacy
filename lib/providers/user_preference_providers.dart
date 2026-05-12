@@ -149,10 +149,10 @@ final alertLevelProvider = FutureProvider<String>((ref) async {
   return preference?.alertLevel ?? 'medium';
 });
 
-/// 다크 모드 상태
-final darkModeProvider = FutureProvider<bool>((ref) async {
+/// 테마 모드 상태
+final themeModeProvider = FutureProvider<String>((ref) async {
   final preference = await ref.watch(userPreferenceProvider.future);
-  return preference?.darkMode ?? false;
+  return preference?.themeMode ?? UserPreference.themeModeSystem;
 });
 
 /// 관심 키워드 추가
@@ -195,11 +195,11 @@ final toggleNotificationsProvider = FutureProvider.autoDispose
       final onboardingSeen =
           await AppOnboardingService.isNotificationOnboardingSeen();
       final alertSettings = await AlertSettings.load();
-      if (enabled && onboardingSeen && alertSettings.marketHoursEnabled) {
-        await NotificationService.scheduleMarketAlerts();
-      } else {
-        await NotificationService.cancelMarketAlerts();
-      }
+      await syncMarketAlerts(
+        notificationsEnabled: enabled,
+        onboardingSeen: onboardingSeen,
+        marketHoursEnabled: alertSettings.marketHoursEnabled,
+      );
 
       await syncBackgroundAlertTask(enabled: enabled && onboardingSeen);
 
@@ -207,15 +207,15 @@ final toggleNotificationsProvider = FutureProvider.autoDispose
       ref.invalidate(userPreferenceProvider);
     });
 
-/// 다크 모드 토글
-final toggleDarkModeProvider = FutureProvider.autoDispose.family<void, bool>((
+/// 테마 모드 변경
+final setThemeModeProvider = FutureProvider.autoDispose.family<void, String>((
   ref,
-  enabled,
+  themeMode,
 ) async {
   final repository = await ref.read(userPreferenceRepositoryProvider.future);
-  await repository.toggleDarkMode(enabled);
+  await repository.setThemeMode(themeMode);
 
   // 상태 갱신
   ref.invalidate(userPreferenceProvider);
-  ref.invalidate(darkModeProvider);
+  ref.invalidate(themeModeProvider);
 });

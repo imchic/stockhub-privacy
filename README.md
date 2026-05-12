@@ -124,9 +124,9 @@ lib/
 
 | 항목 | 링크 |
 | --- | --- |
-| 공식 안내 페이지 | https://imchic.github.io/PinStock-privacy/docs/index.html |
-| 문의 페이지 | https://imchic.github.io/PinStock-privacy/docs/contact.html |
-| 개인정보처리방침 | https://imchic.github.io/PinStock-privacy/docs/privacy_policy.html |
+| 공식 안내 페이지 | https://imchic.github.io/pinstock-privacy/ |
+| 문의 페이지 | https://imchic.github.io/pinstock-privacy/contact.html |
+| 개인정보처리방침 | https://imchic.github.io/pinstock-privacy/privacy_policy.html |
 | 문의 이메일 | pinnstock.dev@gmail.com |
 
 ## GitHub Pages 배포
@@ -138,6 +138,7 @@ Google Play 정책 대응용 공식 안내 페이지와 문의 페이지는 docs
 - docs/index.html
 - docs/contact.html
 - docs/privacy_policy.html
+- docs/app-ads.txt
 
 자동 배포:
 
@@ -150,11 +151,21 @@ Google Play 정책 대응용 공식 안내 페이지와 문의 페이지는 docs
 3. main 브랜치에 푸시합니다.
 4. 배포 후 공개 URL은 https://<github-user>.github.io/<repo>/ 형태로 생성됩니다.
 
+app-ads.txt 확인 URL:
+
+- https://imchic.github.io/pinstock-privacy/app-ads.txt
+
+중요:
+
+- AdMob은 개발자 웹사이트 URL의 경로를 사용하지 않고 호스트명 기준으로 https://<hostname>/app-ads.txt 를 크롤링합니다.
+- 따라서 Google Play의 웹사이트 URL이 GitHub Pages 프로젝트 URL인 https://imchic.github.io/pinstock-privacy/ 라면, 실제 확인 대상은 https://imchic.github.io/app-ads.txt 입니다.
+- 이 경우 완전한 적용을 위해서는 사용자 사이트 루트, 커스텀 도메인, 또는 Firebase Hosting처럼 호스트 루트에 app-ads.txt 를 둘 수 있는 배포 방식이 필요합니다.
+
 Google Play Console 반영 권장값:
 
-- 웹사이트 URL: 배포된 docs/index.html 또는 사이트 루트
-- 뉴스 선언 연락처 URL: 배포된 docs/contact.html
-- 개인정보처리방침 URL: 배포된 docs/privacy_policy.html
+- 웹사이트 URL: 배포된 사이트 루트
+- 뉴스 선언 연락처 URL: 배포된 contact.html
+- 개인정보처리방침 URL: 배포된 privacy_policy.html
 
 ## 안내
 

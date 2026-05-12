@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shimmer/shimmer.dart';
 
 import '../../../config/index.dart';
 import '../../../data/models/index.dart';
@@ -18,6 +19,46 @@ class TrendsScreen extends ConsumerWidget {
     final newsAsync = ref.watch(newsListProvider);
     final topKeywordsAsync = ref.watch(topTrendingKeywordsProvider);
     final surgingAsync = ref.watch(surgingKeywordsProvider);
+
+    ({String title, String detail}) buildTrendLoadingStatus() {
+      if (newsAsync.isLoading) {
+        return (
+          title: '뉴스 집계 중',
+          detail: '오늘 수집된 기사를 모아 트렌드 분석의 재료를 준비하고 있습니다.',
+        );
+      }
+
+      if (positiveAsync.isLoading || negativeAsync.isLoading) {
+        return (
+          title: '감성 분석 중',
+          detail: '강세 뉴스와 약세 뉴스를 분류해 시장 온도를 계산하고 있습니다.',
+        );
+      }
+
+      if (topKeywordsAsync.isLoading) {
+        return (
+          title: '키워드 계산 중',
+          detail: '반복 언급과 중요도를 바탕으로 상위 트렌딩 키워드를 정리하고 있습니다.',
+        );
+      }
+
+      if (surgingAsync.isLoading) {
+        return (
+          title: '급상승 키워드 분석 중',
+          detail: '짧은 시간 안에 빠르게 늘어난 키워드를 추적하고 있습니다.',
+        );
+      }
+
+      return (title: '트렌드 분석 계산 중', detail: '실시간 시장 강세/약세와 키워드 흐름을 정리하고 있습니다.');
+    }
+
+    final isLoadingTrends =
+        positiveAsync.isLoading ||
+        negativeAsync.isLoading ||
+        newsAsync.isLoading ||
+        topKeywordsAsync.isLoading ||
+        surgingAsync.isLoading;
+    final loadingStatus = buildTrendLoadingStatus();
 
     return Scaffold(
       backgroundColor: context.colors.bg,
@@ -72,7 +113,23 @@ class TrendsScreen extends ConsumerWidget {
                 ),
               ),
             ),
-
+            SliverToBoxAdapter(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: isLoadingTrends
+                    ? Padding(
+                        key: const ValueKey('trends-loading-banner'),
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                        child: _TrendsLoadingBanner(
+                          title: loadingStatus.title,
+                          detail: loadingStatus.detail,
+                        ),
+                      )
+                    : const SizedBox.shrink(
+                        key: ValueKey('trends-loading-banner-empty'),
+                      ),
+              ),
+            ),
             // ── 시장 강세/약세 게이지 ──
             SliverToBoxAdapter(
               child: Padding(
@@ -336,16 +393,9 @@ class TrendsScreen extends ConsumerWidget {
                 );
               },
               loading: () => const SliverToBoxAdapter(
-                child: Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 40),
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        AppColors.accent,
-                      ),
-                      strokeWidth: 2,
-                    ),
-                  ),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 32),
+                  child: _TrendingKeywordListShimmer(),
                 ),
               ),
               error: (e, _) => const SliverToBoxAdapter(
@@ -371,13 +421,161 @@ class _TrendsShimmer extends StatelessWidget {
   const _TrendsShimmer({required this.height});
 
   @override
-  Widget build(BuildContext context) => Container(
-    height: height,
-    decoration: BoxDecoration(
-      color: context.colors.surface,
-      borderRadius: BorderRadius.circular(16),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final baseColor = context.colors.surfaceLight;
+    final highlightColor = context.colors.surface;
+
+    return Shimmer.fromColors(
+      baseColor: baseColor,
+      highlightColor: highlightColor,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: baseColor,
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrendsLoadingBanner extends StatelessWidget {
+  final String title;
+  final String detail;
+
+  const _TrendsLoadingBanner({required this.title, required this.detail});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: context.colors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.colors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            detail,
+            style: TextStyle(
+              color: context.colors.textSecondary,
+              fontSize: 12,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: const LinearProgressIndicator(
+              minHeight: 5,
+              backgroundColor: Colors.transparent,
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrendingKeywordListShimmer extends StatelessWidget {
+  const _TrendingKeywordListShimmer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: List.generate(
+        6,
+        (index) => Padding(
+          padding: EdgeInsets.only(bottom: index == 5 ? 0 : 10),
+          child: const _TrendingKeywordListShimmerRow(),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrendingKeywordListShimmerRow extends StatelessWidget {
+  const _TrendingKeywordListShimmerRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final baseColor = context.colors.surfaceLight;
+    final highlightColor = context.colors.surface;
+
+    Widget block({required double width, required double height}) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: baseColor,
+          borderRadius: BorderRadius.circular(8),
+        ),
+      );
+    }
+
+    return Shimmer.fromColors(
+      baseColor: baseColor,
+      highlightColor: highlightColor,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: context.colors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: context.colors.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: baseColor,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  block(width: 120, height: 14),
+                  const SizedBox(height: 8),
+                  block(width: double.infinity, height: 10),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            block(width: 44, height: 18),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _TrendsErrorCard extends StatelessWidget {

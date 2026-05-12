@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'config/index.dart';
-import 'data/models/alert_settings.dart';
+import 'data/models/index.dart';
 import 'data/services/local_storage_service.dart';
 import 'features/home/views/home_screen.dart';
 import 'features/onboarding/views/notification_onboarding_screen.dart';
@@ -27,18 +27,18 @@ void main() async {
 
   // 마스터 알림 + 장 시작/마감 설정이 모두 켜져 있을 때만 재예약
   final alertSettings = await AlertSettings.load();
-  if (isNotificationOnboardingSeen &&
-      notificationsEnabled &&
-      alertSettings.marketHoursEnabled) {
-    await NotificationService.scheduleMarketAlerts();
-  } else {
-    await NotificationService.cancelMarketAlerts();
-  }
+  await syncMarketAlerts(
+    notificationsEnabled: notificationsEnabled,
+    onboardingSeen: isNotificationOnboardingSeen,
+    marketHoursEnabled: alertSettings.marketHoursEnabled,
+  );
 
   // 백그라운드 뉴스 체크는 마스터 알림 상태에 맞춰 등록/해제
   await syncBackgroundAlertTask(
     enabled: notificationsEnabled && isNotificationOnboardingSeen,
   );
+
+  await NotificationService.scheduleMarketHoursTestNotification();
 
   runApp(const ProviderScope(child: PinStockApp()));
 }
@@ -60,7 +60,13 @@ class PinStockApp extends ConsumerWidget {
 
     return userPrefAsync.when(
       data: (preference) {
-        final darkMode = preference?.darkMode ?? false;
+        final themeModeName =
+            preference?.themeMode ?? UserPreference.themeModeSystem;
+        final themeMode = switch (themeModeName) {
+          UserPreference.themeModeLight => ThemeMode.light,
+          UserPreference.themeModeDark => ThemeMode.dark,
+          _ => ThemeMode.system,
+        };
 
         return onboardingSeenAsync.when(
           data: (onboardingSeen) {
@@ -81,12 +87,13 @@ class PinStockApp extends ConsumerWidget {
               title: AppConstants.appName,
               theme: AppTheme.lightTheme(),
               darkTheme: AppTheme.darkTheme(),
-              themeMode: darkMode ? ThemeMode.dark : ThemeMode.light,
+              themeMode: themeMode,
               debugShowCheckedModeBanner: false,
               // 안드로이드 SafeArea 및 텍스트 크기 접근성 향상
               builder: (context, child) {
+                final isDark = Theme.of(context).brightness == Brightness.dark;
                 return AnnotatedRegion<SystemUiOverlayStyle>(
-                  value: darkMode
+                  value: isDark
                       ? SystemUiOverlayStyle.light.copyWith(
                           statusBarColor: const Color(0xFF0A0A0A),
                         )
@@ -98,7 +105,7 @@ class PinStockApp extends ConsumerWidget {
                       context,
                     ).copyWith(textScaler: const TextScaler.linear(1.2)),
                     child: Container(
-                      color: darkMode
+                      color: isDark
                           ? const Color(0xFF0A0A0A)
                           : const Color(0xFFF2F4F6),
                       child: SafeArea(
@@ -156,6 +163,7 @@ class PinStockApp extends ConsumerWidget {
           loading: () => MaterialApp(
             title: AppConstants.appName,
             theme: AppTheme.lightTheme(),
+            darkTheme: AppTheme.darkTheme(),
             home: const Scaffold(
               body: Center(child: CircularProgressIndicator()),
             ),
@@ -163,6 +171,7 @@ class PinStockApp extends ConsumerWidget {
           error: (error, stack) => MaterialApp(
             title: AppConstants.appName,
             theme: AppTheme.lightTheme(),
+            darkTheme: AppTheme.darkTheme(),
             home: Scaffold(
               body: Center(
                 child: Text(
@@ -178,6 +187,7 @@ class PinStockApp extends ConsumerWidget {
       loading: () => MaterialApp(
         title: AppConstants.appName,
         theme: AppTheme.lightTheme(),
+        darkTheme: AppTheme.darkTheme(),
         // 로딩 화면에도 SafeArea 및 텍스트 크기 향상 적용
         builder: (context, child) {
           return MediaQuery(
@@ -192,6 +202,7 @@ class PinStockApp extends ConsumerWidget {
       error: (error, stack) => MaterialApp(
         title: AppConstants.appName,
         theme: AppTheme.lightTheme(),
+        darkTheme: AppTheme.darkTheme(),
         // 에러 화면에도 SafeArea 및 텍스트 크기 향상 적용
         builder: (context, child) {
           return MediaQuery(

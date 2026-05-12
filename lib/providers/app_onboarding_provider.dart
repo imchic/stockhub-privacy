@@ -18,11 +18,11 @@ final completeNotificationOnboardingProvider = FutureProvider.autoDispose<void>(
     final notificationsEnabled = userPreference?.notificationsEnabled ?? false;
     final alertSettings = await AlertSettings.load();
 
-    if (notificationsEnabled && alertSettings.marketHoursEnabled) {
-      await NotificationService.scheduleMarketAlerts();
-    } else {
-      await NotificationService.cancelMarketAlerts();
-    }
+    await syncMarketAlerts(
+      notificationsEnabled: notificationsEnabled,
+      onboardingSeen: true,
+      marketHoursEnabled: alertSettings.marketHoursEnabled,
+    );
 
     await syncBackgroundAlertTask(enabled: notificationsEnabled);
 

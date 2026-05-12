@@ -10,6 +10,30 @@ import '../models/market_index.dart';
 class AiSummaryService {
   static const _endpoint =
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent';
+  static const List<Map<String, String>> _bullishCoinFallbackPool = [
+    {'name': 'BTC', 'sector': '디지털금', 'reason': '기관 수급과 ETF 선호 수혜'},
+    {'name': 'ETH', 'sector': '플랫폼', 'reason': '스테이킹·현물 수급 기대 반영'},
+    {'name': 'SOL', 'sector': '고베타 메인넷', 'reason': '위험자산 선호 확대에 민감'},
+    {'name': 'XRP', 'sector': '결제', 'reason': '제도권 결제 테마 유입 기대'},
+    {'name': 'BNB', 'sector': '거래소 생태계', 'reason': '거래대금 회복 수혜 기대'},
+    {'name': 'DOGE', 'sector': '밈코인', 'reason': '투기 심리 확대 시 탄력 큼'},
+    {'name': 'AVAX', 'sector': '레이어1', 'reason': '온체인 회복 기대 반영'},
+    {'name': 'LINK', 'sector': '오라클', 'reason': '토큰화·온체인 인프라 수혜'},
+    {'name': 'SUI', 'sector': '신규 메인넷', 'reason': '고베타 순환매 유입 기대'},
+    {'name': 'ADA', 'sector': '레이어1', 'reason': '메이저 알트 순환매 후보'},
+  ];
+  static const List<Map<String, String>> _bearishCoinFallbackPool = [
+    {'name': 'DOGE', 'sector': '밈코인', 'reason': '위험회피 시 변동성 압력 큼'},
+    {'name': 'SUI', 'sector': '신규 메인넷', 'reason': '고베타 자산 차익실현 우려'},
+    {'name': 'AVAX', 'sector': '레이어1', 'reason': '유동성 축소에 민감한 편'},
+    {'name': 'SOL', 'sector': '고베타 메인넷', 'reason': '변동성 확대 시 조정폭 확대'},
+    {'name': 'ADA', 'sector': '레이어1', 'reason': '알트 약세 구간 상대 부진 우려'},
+    {'name': 'XRP', 'sector': '결제', 'reason': '규제 불확실성 재부각 가능성'},
+    {'name': 'ETH', 'sector': '플랫폼', 'reason': '리스크오프 시 알트 전반 압력'},
+    {'name': 'LINK', 'sector': '오라클', 'reason': '온체인 기대 약화 시 부담'},
+    {'name': 'BNB', 'sector': '거래소 생태계', 'reason': '거래대금 둔화 시 약세 가능'},
+    {'name': 'BTC', 'sector': '디지털금', 'reason': '달러 강세 구간 상단 부담'},
+  ];
 
   /// 시장 지수 데이터 + 뉴스 헤드라인 → 한 줄 한국어 요약 반환
   Future<String> generateMarketSummary({
@@ -72,7 +96,7 @@ class AiSummaryService {
     const nasdaqGuideText =
         '나스닥 추천은 뉴스 제목에 직접 드러난 기업·산업·이벤트를 우선 근거로 삼되, 특정 종목명이 없어도 제목에 드러난 산업/거시 이벤트로 수혜 가능성이 높은 대표 종목까지는 연결할 수 있다. 다만 연결 근거가 약하면 "나스닥: 없음" 으로 출력할 것\n';
     const coinGuideText =
-        '코인 추천은 비트코인, 이더리움 같은 직접 언급이 있으면 최우선 반영하고, 직접 종목 언급이 없더라도 위험자산 선호, 달러 약세, 금리 기대, ETF/제도권 수급, 채굴/전력/블록체인 인프라 같은 제목 키워드가 있으면 대표 코인으로 연결할 수 있다. 근거가 약하면 "코인: 없음" 으로 출력할 것\n';
+        '코인 추천은 비트코인, 이더리움 같은 직접 언급이 있으면 최우선 반영하고, 직접 종목 언급이 없더라도 위험자산 선호, 달러 약세, 금리 기대, ETF/제도권 수급, 채굴/전력/블록체인 인프라 같은 제목 키워드가 있으면 대표 코인으로 연결할 수 있다. 가능하면 강세추천/약세주의 각각 6개를 채우고, 최소 4개 이상은 제시할 것. 근거가 매우 약할 때만 "코인: 없음" 으로 출력할 것\n';
 
     final prompt =
         '역할:\n'
@@ -141,8 +165,11 @@ class AiSummaryService {
         '- 특정 종목 1개로만 반복 추천하는 쏠림 금지\n\n'
         '[코인 제한]\n'
         '- 코인은 티커 또는 대표 코인명으로 표기 가능\n'
-        '- 직접 코인 언급이 없더라도 제목에 위험자산 선호, 유동성 확대, 금리 인하 기대, ETF/제도권 수급, 블록체인 인프라가 드러나면 BTC, ETH, SOL 등 대표 코인으로 연결 가능\n'
+        '- 직접 코인 언급이 없더라도 제목에 위험자산 선호, 유동성 확대, 금리 인하 기대, ETF/제도권 수급, 블록체인 인프라가 드러나면 BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK 등 대표 코인으로 연결 가능\n'
         '- 반대로 규제 강화, 해킹, 위험회피, 달러 강세, 유동성 축소가 강하면 약세주의 코인으로 연결 가능\n'
+        '- 강세추천 코인은 가능하면 6개를 채우고, 최소 4개 미만으로 줄이지 말 것\n'
+        '- 약세주의 코인도 가능하면 6개를 채우고, 최소 4개 미만으로 줄이지 말 것\n'
+        '- 같은 자산군만 반복하지 말고 메이저, 플랫폼, 결제, 고베타 알트를 섞어 분산 추천할 것\n'
         '- 약세주의 코인은 변동성 확대 구간에서 BTC, ETH, SOL 등 시가총액 상위 코인 중 뉴스 맥락과 가장 맞는 자산으로 연결 가능\n'
         '- 기사와 연결이 약하면 "없음" 으로 출력\n\n'
         '[KRX 제한]\n'
@@ -174,7 +201,7 @@ class AiSummaryService {
           },
         ],
         'generationConfig': {
-          'maxOutputTokens': 900, // 추천 종목을 시장별 6개 내외까지 허용
+          'maxOutputTokens': 1100, // 추천 종목을 시장별 6개 내외까지 허용
           'temperature': 0.4, // 더 일관된 응답을 위해 온도 감소
           'topP': 0.8, // 출력 다양성 제한
         },
@@ -442,15 +469,25 @@ class AiSummaryService {
       directMentionedKospi: directMentionedKospi,
       directMentionedKosdaq: directMentionedKosdaq,
     );
+    final bullishCoinPicks = _ensureCoinPickCount(
+      pickMap['강세추천 코인'] ?? '-',
+      bullish: true,
+      contextText: cleanText,
+    );
+    final bearishCoinPicks = _ensureCoinPickCount(
+      pickMap['약세주의 코인'] ?? '-',
+      bullish: false,
+      contextText: cleanText,
+    );
 
     result.writeln('강세추천 코스피: ${validated['강세추천 코스피'] ?? '-'}');
     result.writeln('강세추천 코스닥: ${validated['강세추천 코스닥'] ?? '-'}');
     result.writeln('강세추천 나스닥: ${validated['강세추천 나스닥'] ?? '-'}');
-    result.writeln('강세추천 코인: ${pickMap['강세추천 코인'] ?? '-'}');
+    result.writeln('강세추천 코인: $bullishCoinPicks');
     result.writeln('약세주의 코스피: ${validated['약세주의 코스피'] ?? '-'}');
     result.writeln('약세주의 코스닥: ${validated['약세주의 코스닥'] ?? '-'}');
     result.writeln('약세주의 나스닥: ${validated['약세주의 나스닥'] ?? '-'}');
-    result.write('약세주의 코인: ${pickMap['약세주의 코인'] ?? '-'}');
+    result.write('약세주의 코인: $bearishCoinPicks');
 
     return result.toString();
   }
@@ -537,5 +574,85 @@ class AiSummaryService {
             ),
       '약세주의 나스닥': pickMap['약세주의 나스닥'] ?? '-',
     };
+  }
+
+  String _ensureCoinPickCount(
+    String items, {
+    required bool bullish,
+    required String contextText,
+  }) {
+    final normalizedItems = items.trim();
+    final itemPattern = RegExp(r'^(.+?)(?:\[[^\]]+\])?\((.+?)\)$');
+    final existingTokens =
+        normalizedItems == '-' ||
+            normalizedItems.isEmpty ||
+            normalizedItems == '없음'
+        ? <String>[]
+        : normalizedItems
+              .split(RegExp(r',\s*(?=[^)]*(?:\(|$))'))
+              .map((item) => item.trim())
+              .where((item) => item.isNotEmpty)
+              .toList();
+    final existingNames = existingTokens
+        .map((item) => (itemPattern.firstMatch(item)?.group(1) ?? item).trim())
+        .toSet();
+
+    if (existingTokens.length >= 6) {
+      return existingTokens.take(6).join(', ');
+    }
+
+    final pool = _selectCoinFallbackPool(
+      bullish: bullish,
+      contextText: contextText,
+    );
+    final merged = <String>[...existingTokens];
+
+    for (final candidate in pool) {
+      final name = candidate['name']!;
+      if (existingNames.contains(name)) continue;
+      merged.add(
+        '${candidate['name']}[${candidate['sector']}](${candidate['reason']})',
+      );
+      existingNames.add(name);
+      if (merged.length >= 6) break;
+    }
+
+    return merged.isEmpty ? '-' : merged.take(6).join(', ');
+  }
+
+  List<Map<String, String>> _selectCoinFallbackPool({
+    required bool bullish,
+    required String contextText,
+  }) {
+    final normalized = contextText.toLowerCase();
+    final pool = bullish
+        ? List<Map<String, String>>.from(_bullishCoinFallbackPool)
+        : List<Map<String, String>>.from(_bearishCoinFallbackPool);
+
+    bool prioritize(Iterable<String> keywords) {
+      return keywords.any((keyword) => normalized.contains(keyword));
+    }
+
+    void moveToFront(List<String> names) {
+      pool.sort((a, b) {
+        final aIndex = names.indexOf(a['name']!);
+        final bIndex = names.indexOf(b['name']!);
+        final aRank = aIndex == -1 ? 999 : aIndex;
+        final bRank = bIndex == -1 ? 999 : bIndex;
+        return aRank.compareTo(bRank);
+      });
+    }
+
+    if (prioritize(['etf', '기관', '제도권', 'risk on', '위험자산', '유동성'])) {
+      moveToFront(['BTC', 'ETH', 'SOL', 'XRP', 'BNB', 'LINK']);
+    } else if (prioritize(['규제', '해킹', '달러 강세', '위험회피', '관세'])) {
+      moveToFront(['DOGE', 'SUI', 'AVAX', 'SOL', 'ADA', 'XRP']);
+    } else if (prioritize(['결제', '송금', '은행', '리플'])) {
+      moveToFront(['XRP', 'XLM', 'BTC', 'ETH', 'LINK', 'BNB']);
+    } else if (prioritize(['ai', '반도체', '데이터센터', '전력', '인프라'])) {
+      moveToFront(['ETH', 'SOL', 'LINK', 'AVAX', 'SUI', 'BTC']);
+    }
+
+    return pool;
   }
 }

@@ -80,7 +80,7 @@ class AlertSettings {
     fallAlertsEnabled: json['fallAlertsEnabled'] as bool? ?? true,
     surgeThreshold: (json['surgeThreshold'] as num?)?.toDouble() ?? 3.0,
     fallThreshold: (json['fallThreshold'] as num?)?.toDouble() ?? 3.0,
-    marketHoursEnabled: json['marketHoursEnabled'] as bool? ?? false,
+    marketHoursEnabled: json['marketHoursEnabled'] as bool? ?? true,
   );
 
   static const _prefKey = 'alert_settings_v1';
